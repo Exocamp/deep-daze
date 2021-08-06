@@ -32,8 +32,9 @@ to_linear_srgb = odd(_to_linear_srgb)
 to_nonlinear_srgb = odd(_to_nonlinear_srgb)
 
 
-def resample(input, size, num, align_corners=True, is_srgb=False, mode='bicubic'):
+def resample(input, size, num, align_corners=True, is_srgb=False, mode='bicubic', padding_mode='constant'):
     #bigsleep uses a num of 3, vqgan uses a num of 2
+    assert padding_mode in ['constant', 'reflect', 'replicate', 'circular'], "Invalid padding mode for resample"
 
     n, c, h, w = input.shape
     dh, dw = size
@@ -48,13 +49,13 @@ def resample(input, size, num, align_corners=True, is_srgb=False, mode='bicubic'
     if dh < h:
         kernel_h = lanczos(ramp(dh / h, num), num).to(input.device, input.dtype)
         pad_h = (kernel_h.shape[0] - 1) // 2
-        input = F.pad(input, (0, 0, pad_h, pad_h), 'reflect')
+        input = F.pad(input, (0, 0, pad_h, pad_h), padding_mode)
         input = F.conv2d(input, kernel_h[None, None, :, None])
 
     if dw < w:
         kernel_w = lanczos(ramp(dw / w, num), num).to(input.device, input.dtype)
         pad_w = (kernel_w.shape[0] - 1) // 2
-        input = F.pad(input, (pad_w, pad_w, 0, 0), 'reflect')
+        input = F.pad(input, (pad_w, pad_w, 0, 0), padding_mode)
         input = F.conv2d(input, kernel_w[None, None, None, :])
 
     input = input.view([n, c, h, w])
