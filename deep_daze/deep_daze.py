@@ -45,7 +45,9 @@ def interpolate(image, size):
     return F.interpolate(image, (size, size), mode='bilinear', align_corners=False)
 
 
-def rand_cutout(image, size, center_bias=False, center_focus=2):
+def rand_cutout(image, size, center_bias=False, center_focus=2, pooling=None):
+    av_pool = nn.AdaptiveAvgPool2d((224, 224))
+    max_pool = nn.AdaptiveMaxPool2d((224, 224))
     width = image.shape[-1]
     min_offset = 0
     max_offset = width - size
@@ -62,6 +64,8 @@ def rand_cutout(image, size, center_bias=False, center_focus=2):
         offset_x = random.randint(min_offset, max_offset)
         offset_y = random.randint(min_offset, max_offset)
     cutout = image[:, :, offset_x:offset_x + size, offset_y:offset_y + size]
+    cutout = av_pool(cutout)
+
     return cutout
 
 
@@ -137,6 +141,7 @@ class DeepDaze(nn.Module):
             batch_size,
             num_layers=8,
             image_width=512,
+            image_height=512,
             loss_coef=100,
             theta_initial=None,
             theta_hidden=None,
@@ -147,11 +152,13 @@ class DeepDaze(nn.Module):
             gauss_mean=0.6,
             gauss_std=0.2,
             do_cutout=True,
+            num_cutouts=16,
             center_bias=False,
             center_focus=2,
             hidden_size=256,
             averaging_weight=0.3,
             experimental_resample=None,
+            resample_padding="constant",
             layer_activation=None,
             final_activation=nn.Identity(),
             num_linears=1,
@@ -198,21 +205,27 @@ class DeepDaze(nn.Module):
         self.model = SirenWrapper(
             siren,
             image_width=image_width,
-            image_height=image_width
+            image_height=image_height
         )
 
         self.saturate_bound = saturate_bound
         self.saturate_limit = 0.75  # cutouts above this value lead to destabilization
         self.lower_bound_cutout = lower_bound_cutout
         self.upper_bound_cutout = upper_bound_cutout
+
         self.gauss_sampling = gauss_sampling
         self.gauss_mean = gauss_mean
         self.gauss_std = gauss_std
+
         self.do_cutout = do_cutout
+        self.cut_size = clip_perceptor.visual.input_resolution
+        self.num_cutouts = num_cutouts
+
         self.center_bias = center_bias
         self.center_focus = center_focus
         self.averaging_weight = averaging_weight
         self.experimental_resample = experimental_resample
+        self.resample_padding = resample_padding
         
     def sample_sizes(self, lower, upper, width, gauss_mean):
         if self.gauss_sampling:
@@ -234,7 +247,7 @@ class DeepDaze(nn.Module):
             return out
                 
         # determine upper and lower sampling bound
-        width = out.shape[-1]
+        height, width = out.shape[2:4]
         lower_bound = self.lower_bound_cutout
         if self.saturate_bound:
             progress_fraction = self.num_batches_processed / self.total_batches
@@ -246,12 +259,20 @@ class DeepDaze(nn.Module):
         image_pieces = []
         # create normalized random cutouts
         if self.do_cutout:
-            for size in sizes:
-                image_piece = rand_cutout(out, size, center_bias=self.center_bias, center_focus=self.center_focus)
+            max_size = min(height, width)
+            min_size = min(height, width, self.cut_size)
+            min_size_width = min(height, width)
+
+            lower_bound = float(self.cut_size / min_size_width)
+            for cutout in range(self.num_cutouts):
+                size = int(min_size_width*torch.zeros(1,).normal_(mean=.8, std=.3).clip(lower_bound, 1.))
+                offsetx = torch.randint(0, width - size + 1, ())
+                offsety = torch.randint(0, height - size + 1, ())
+                image_piece = out[:, :, offsety:offsety + size, offsetx:offsetx + size]
 
                 #Implement experimental resampling.
                 if exists(self.experimental_resample):
-                    image_piece = resample(image_piece, (224, 224), self.experimental_resample, align_corners=False, mode='bilinear')
+                    image_piece = resample(image_piece, (224, 224), self.experimental_resample, align_corners=False, mode='bilinear', padding_mode=self.resample_padding)
                 else:
                     image_piece = interpolate(image_piece, self.input_resolution)
 
