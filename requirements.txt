@@ -7,3 +7,4 @@ torch_optimizer
 torchvision>=0.8.2
 tqdm
 regex
+rotary-embedding-torch

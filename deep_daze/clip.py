@@ -14,6 +14,7 @@ import warnings
 from typing import Union, List
 from torchvision.transforms import Compose, Normalize
 from tqdm import tqdm
+from rotary_embedding_torch import apply_rotary_emb, RotaryEmbedding, broadcat
 
 try:
     from torchvision.transforms import InterpolationMode
