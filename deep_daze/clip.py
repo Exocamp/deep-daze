@@ -83,7 +83,7 @@ def available_models() -> List[str]:
     return list(_MODELS.keys())
 
 
-def load(name: str, device: Union[str, torch.device] = "cuda" if torch.cuda.is_available() else "cpu", jit=False, clip_activation=nn.ReLU(inplace=True)):
+def load(name: str, device: Union[str, torch.device] = "cuda" if torch.cuda.is_available() else "cpu", jit=False, clip_activation=nn.ReLU(inplace=True), rotary=False, freq_type="lang"):
     """Load a CLIP model
 
     Parameters
@@ -124,7 +124,7 @@ def load(name: str, device: Union[str, torch.device] = "cuda" if torch.cuda.is_a
         state_dict = torch.load(model_path, map_location="cpu")
 
     if not jit:
-        model = build_model(state_dict or model.state_dict(), clip_activation=clip_activation).to(device)
+        model = build_model(state_dict or model.state_dict(), clip_activation=clip_activation, rotary=rotary, freq_type=freq_type).to(device)
         if str(device) == "cpu":
             model.float()
         return model, _transform()
@@ -378,7 +378,7 @@ class QuickGELU(nn.Module):
 
 
 class ResidualAttentionBlock(nn.Module):
-    def __init__(self, d_model: int, n_head: int, attn_mask: torch.Tensor = None):
+    def __init__(self, d_model: int, n_head: int, attn_mask: torch.Tensor = None, rotary: bool = False, freq_type: str = "lang"):
         super().__init__()
 
         self.attn = nn.MultiheadAttention(d_model, n_head)
@@ -390,9 +390,19 @@ class ResidualAttentionBlock(nn.Module):
         ]))
         self.ln_2 = LayerNorm(d_model)
         self.attn_mask = attn_mask
+        self.rotary = rotary
+        self.freq_type = freq_type
 
     def attention(self, x: torch.Tensor):
         self.attn_mask = self.attn_mask.to(dtype=x.dtype, device=x.device) if self.attn_mask is not None else None
+        if self.rotary:
+            #taken from rotary-embedding-torch repo examples
+            seq_length = x.shape[1] #i have no idea if this is actually the sequence length.
+            rot_emb = RotaryEmbedding(dim = 32, freqs_for=self.freq_type)
+            freqs = rot_emb(torch.arange(seq_length), cache_key = seq_length).to(dtype=x.dtype, device=x.device)
+            freqs = freqs[None, ...]
+            x = apply_rotary_emb(freqs, x)
+            #print("Rotary embeddings applied...")
         return self.attn(x, x, x, need_weights=False, attn_mask=self.attn_mask)[0]
 
     def forward(self, x: torch.Tensor):
@@ -402,18 +412,18 @@ class ResidualAttentionBlock(nn.Module):
 
 
 class Transformer(nn.Module):
-    def __init__(self, width: int, layers: int, heads: int, attn_mask: torch.Tensor = None):
+    def __init__(self, width: int, layers: int, heads: int, attn_mask: torch.Tensor = None, rotary: bool = False, freq_type: str = "lang"):
         super().__init__()
         self.width = width
         self.layers = layers
-        self.resblocks = nn.Sequential(*[ResidualAttentionBlock(width, heads, attn_mask) for _ in range(layers)])
+        self.resblocks = nn.Sequential(*[ResidualAttentionBlock(width, heads, attn_mask, rotary=rotary, freq_type=freq_type) for _ in range(layers)])
 
     def forward(self, x: torch.Tensor):
         return self.resblocks(x)
 
 
 class VisionTransformer(nn.Module):
-    def __init__(self, input_resolution: int, patch_size: int, width: int, layers: int, heads: int, output_dim: int):
+    def __init__(self, input_resolution: int, patch_size: int, width: int, layers: int, heads: int, output_dim: int, rotary: bool = False, freq_type: str = "lang"):
         super().__init__()
         self.input_resolution = input_resolution
         self.output_dim = output_dim
@@ -467,7 +477,9 @@ class CLIP(nn.Module):
                  transformer_width: int,
                  transformer_heads: int,
                  transformer_layers: int,
-                 clip_activation=nn.ReLU(inplace=True)
+                 clip_activation=nn.ReLU(inplace=True),
+                 rotary=False,
+                 freq_type = "lang"
                  ):
         super().__init__()
 
@@ -490,7 +502,9 @@ class CLIP(nn.Module):
                 width=vision_width,
                 layers=vision_layers,
                 heads=vision_heads,
-                output_dim=embed_dim
+                output_dim=embed_dim,
+                rotary=rotary,
+                freq_type=freq_type
             )
 
         self.transformer = Transformer(
@@ -610,7 +624,7 @@ def convert_weights(model: nn.Module):
     model.apply(_convert_weights_to_fp16)
 
 
-def build_model(state_dict: dict, clip_activation=nn.ReLU(inplace=True)):
+def build_model(state_dict: dict, clip_activation=nn.ReLU(inplace=True), rotary=False, freq_type="lang"):
     vit = "visual.proj" in state_dict
 
     if vit:
@@ -638,7 +652,8 @@ def build_model(state_dict: dict, clip_activation=nn.ReLU(inplace=True)):
     model = CLIP(
         embed_dim,
         image_resolution, vision_layers, vision_width, vision_patch_size,
-        context_length, vocab_size, transformer_width, transformer_heads, transformer_layers, clip_activation
+        context_length, vocab_size, transformer_width, transformer_heads, transformer_layers,
+        clip_activation, rotary, freq_type
     )
 
     for key in ["input_resolution", "context_length", "vocab_size"]:
