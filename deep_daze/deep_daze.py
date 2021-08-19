@@ -431,6 +431,7 @@ class Imagine(nn.Module):
                 total_batches,
                 batch_size=batch_size,
                 image_width=image_width,
+                image_height=image_height,
                 num_layers=num_layers,
                 theta_initial=theta_initial,
                 theta_hidden=theta_hidden,
