@@ -355,6 +355,7 @@ class Imagine(nn.Module):
             layer_activation=None,
             final_activation="identity",
             num_linears=1,
+            num_cutouts=16,
             multiply=None,
             clip_activation=nn.ReLU(inplace=True),
             rotary=False,
@@ -453,7 +454,8 @@ class Imagine(nn.Module):
                 num_linears=num_linears,
                 multiply=multiply,
                 norm_type=norm_type,
-                fourier=fourier
+                fourier=fourier,
+                num_cutouts=num_cutouts
             ).to(self.device)
         self.model = model
         self.scaler = GradScaler()
