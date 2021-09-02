@@ -12,7 +12,6 @@ from .utils import exists, enable
 def cast_tuple(val, repeat = 1):
     return val if isinstance(val, tuple) else ((val,) * repeat)
 
-
 #Fourier features to be used on the input layer. thanks again alstro
 #May need to adjust std for optimal performance
 class FourierFeatures(nn.Module):
@@ -38,12 +37,13 @@ class LayerActivation(nn.Module):
 #aight I guess I have to just import the whole Siren module. okay then.
 
 class SirenLayer(nn.Module):
-    def __init__(self, dim_in, dim_out, w0 = 1., c = 6., is_first = False, use_bias = True, layer_activation=torch.sin, final_activation = None, num_linears=1, multiply=None):
+    def __init__(self, dim_in, dim_out, w0 = 1., c = 6., is_first = False, use_bias = True, layer_activation=torch.sin, final_activation = None, num_linears=1, multiply=None, erf_init=False):
         super().__init__()
         self.dim_in = dim_in
         self.is_first = is_first
         self.num_linears = num_linears
-        self.multiply = multiply
+        self.multiply = 
+        self.erf_init = erf_init
 
         weight = torch.zeros(dim_out, dim_in)
         bias = enable(use_bias, torch.zeros(dim_out))
@@ -58,9 +58,14 @@ class SirenLayer(nn.Module):
 
         w_std = (1 / dim) if self.is_first else (math.sqrt(c / dim) / w0)
         weight.uniform_(-w_std, w_std)
+        #Apply erf onto weights and biases. This somehow makes it better. No I don't know why shut up
+        if self.erf_init:
+            weight.erf_()
 
         if exists(bias):
             bias.uniform_(-w_std, w_std)
+            if self.erf_init:
+                bias.erf_()
 
     def forward(self, x):
         for _ in range(self.num_linears):
