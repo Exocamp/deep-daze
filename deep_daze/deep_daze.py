@@ -23,14 +23,6 @@ from .resample import resample
 from .siren import SirenNetwork, LayerActivation, SirenWrapper
 from .utils import clamp_with_grad, unmap_pixels, exists, enable
 
-#functions lists.
-#Some final activation functions have outputs from range [-1, 1] and others have from range [0, 1].
-#If we want program to be able to work with either range without excess white or black in images,
-#then we need some way to let Deep Daze know to convert the outputs or not before clamping.
-#these lists'll do it. there might be an easier way but i don't know it so lol
-neg_one_to_one = [nn.Identity(), nn.Tanh(), nn.ELU(), nn.Hardtanh(), nn.LogSigmoid(), nn.RReLU(), nn.SELU(), nn.CELU(), nn.GELU(), nn.SiLU(), nn.Mish(), nn.Softsign(), nn.Tanhshrink()]
-zero_to_one = [nn.Hardsigmoid(), nn.LeakyReLU(), nn.ReLU(), nn.ReLU6(), nn.Sigmoid(), nn.Softplus()]
-
 clip_mean = [0.48145466, 0.4578275, 0.40821073]
 clip_std = [0.26862954, 0.26130258, 0.27577711]
 
@@ -164,7 +156,8 @@ class DeepDaze(nn.Module):
             num_linears=1,
             multiply=None,
             norm_type="unmap",
-            fourier=False
+            fourier=False,
+            pooling=False
     ):
         super().__init__()
         # load clip
@@ -226,6 +219,11 @@ class DeepDaze(nn.Module):
         self.averaging_weight = averaging_weight
         self.experimental_resample = experimental_resample
         self.resample_padding = resample_padding
+
+        self.av_pool= nn.AdaptiveAvgPool2d((224, 224))
+        self.max_pool = nn.AdaptiveMaxPool2d((224, 224))
+        self.pooling = pooling
+
         
     def sample_sizes(self, lower, upper, width, gauss_mean):
         if self.gauss_sampling:
@@ -269,6 +267,8 @@ class DeepDaze(nn.Module):
                 offsetx = torch.randint(0, width - size + 1, ())
                 offsety = torch.randint(0, height - size + 1, ())
                 image_piece = out[:, :, offsety:offsety + size, offsetx:offsetx + size]
+                if self.pooling:
+                    image_piece = self.av_pool(image_piece)
 
                 #Implement experimental resampling.
                 if exists(self.experimental_resample):
@@ -361,7 +361,8 @@ class Imagine(nn.Module):
             rotary=False,
             freq_type="lang",
             norm_type="unmap",
-            fourier=False
+            fourier=False,
+            pooling=False
     ):
 
         super().__init__()
@@ -455,7 +456,8 @@ class Imagine(nn.Module):
                 multiply=multiply,
                 norm_type=norm_type,
                 fourier=fourier,
-                num_cutouts=num_cutouts
+                num_cutouts=num_cutouts,
+                pooling=pooling
             ).to(self.device)
         self.model = model
         self.scaler = GradScaler()
