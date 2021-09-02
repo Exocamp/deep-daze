@@ -157,7 +157,8 @@ class DeepDaze(nn.Module):
             multiply=None,
             norm_type="unmap",
             fourier=False,
-            pooling=False
+            pooling=False,
+            erf_init=False
     ):
         super().__init__()
         # load clip
@@ -192,7 +193,8 @@ class DeepDaze(nn.Module):
             final_activation=final_activation,
             num_linears=num_linears,
             multiply=multiply,
-            fourier=fourier
+            fourier=fourier,
+            erf_init=erf_init
         )
 
         self.model = SirenWrapper(
@@ -362,7 +364,8 @@ class Imagine(nn.Module):
             freq_type="lang",
             norm_type="unmap",
             fourier=False,
-            pooling=False
+            pooling=False,
+            erf_init=False
     ):
 
         super().__init__()
@@ -457,7 +460,8 @@ class Imagine(nn.Module):
                 norm_type=norm_type,
                 fourier=fourier,
                 num_cutouts=num_cutouts,
-                pooling=pooling
+                pooling=pooling,
+                erf_init=erf_init
             ).to(self.device)
         self.model = model
         self.scaler = GradScaler()

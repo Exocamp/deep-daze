@@ -42,7 +42,7 @@ class SirenLayer(nn.Module):
         self.dim_in = dim_in
         self.is_first = is_first
         self.num_linears = num_linears
-        self.multiply = 
+        self.multiply = multiply
         self.erf_init = erf_init
 
         weight = torch.zeros(dim_out, dim_in)
@@ -78,7 +78,7 @@ class SirenLayer(nn.Module):
 
 #because I don't wanna do 2 repos, here's a more "open" SirenNet class, and by that I mean just changing activations on the layers themselves lol
 class SirenNetwork(nn.Module):
-    def __init__(self, dim_in, dim_hidden, dim_out, num_layers, w0 = 1., w0_initial = 30., use_bias = True, layer_activation = None, final_activation = None, num_linears = 1, multiply=None, fourier=True):
+    def __init__(self, dim_in, dim_hidden, dim_out, num_layers, w0 = 1., w0_initial = 30., use_bias = True, layer_activation = None, final_activation = None, num_linears = 1, multiply=None, fourier=True, erf_init=False):
         super().__init__()
         self.num_layers = num_layers
         self.dim_hidden = dim_hidden
@@ -99,7 +99,8 @@ class SirenNetwork(nn.Module):
             use_bias = use_bias,
             is_first = True,
             layer_activation = None if not exists(layer_activation) else LayerActivation(torch_activation=layer_activation),
-            num_linears=num_linears
+            num_linears=num_linears,
+            erf_init=erf_init
           ))
 
         for ind in range(num_layers - 1):
