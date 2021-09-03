@@ -372,11 +372,6 @@ class LayerNorm(nn.LayerNorm):
         ret = super().forward(x.type(torch.float32))
         return ret.type(orig_type)
 
-class QuickGELUerf(nn.Module):
-    def forward(self, x: torch.Tensor):
-        x = x.erf_()
-        return x * torch.sigmoid(1.702 * x)
-
 class QuickGELU(nn.Module):
     def forward(self, x: torch.Tensor):
         return x * torch.sigmoid(1.702 * x)
@@ -391,7 +386,7 @@ class ResidualAttentionBlock(nn.Module):
         self.ln_1 = LayerNorm(d_model)
         self.mlp = nn.Sequential(OrderedDict([
             ("c_fc", nn.Linear(d_model, d_model * 4)),
-            ("gelu", QuickGELUerf()),
+            ("gelu", QuickGELU()),
             ("c_proj", nn.Linear(d_model * 4, d_model))
         ]))
         self.ln_2 = LayerNorm(d_model)
