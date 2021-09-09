@@ -125,7 +125,8 @@ class DeepDaze(nn.Module):
             hidden_size=256,
             averaging_weight=0.3,
             final_activation=nn.Identity(),
-            norm_type="unmap"
+            norm_type="unmap",
+            lr=1e-5
     ):
         super().__init__()
         # load clip
@@ -133,6 +134,9 @@ class DeepDaze(nn.Module):
         self.perceptor = clip_perceptor
         self.input_resolution = input_res
         self.normalize_image = clip_norm
+
+        self.image_width = image_width
+        self.image_height = image_height
         
         self.loss_coef = loss_coef
         self.image_width = image_width
@@ -141,9 +145,7 @@ class DeepDaze(nn.Module):
         self.total_batches = total_batches
         self.num_batches_processed = 0
 
-        self.layer_activation = layer_activation
         self.final_activation = final_activation
-        self.num_linears = num_linears
         self.norm_type = norm_type
 
         w0 = default(theta_hidden, 30.)
@@ -226,12 +228,6 @@ class DeepDaze(nn.Module):
         self.center_bias = center_bias
         self.center_focus = center_focus
         self.averaging_weight = averaging_weight
-        self.experimental_resample = experimental_resample
-        self.resample_padding = resample_padding
-
-        self.av_pool= nn.AdaptiveAvgPool2d((224, 224))
-        self.max_pool = nn.AdaptiveMaxPool2d((224, 224))
-        self.pooling = pooling
 
         
     def sample_sizes(self, lower, upper, width, gauss_mean):
@@ -287,15 +283,9 @@ class DeepDaze(nn.Module):
     def calc_cosine_similarity(self, input, target):
     	avg_embed = input.mean(dim=0).unsqueeze(0)
     	averaged_loss = -1 * torch.cosine_similarity(target, avg_embed, dim=-1).mean()
-        #print(f"Averaged loss calculated: {averaged_loss}")
-        # loss over all cutouts
-        #print(f"text_embed shape: {text_embed.shape}\nimage_embed shape: {image_embed.shape}")
-        general_loss = -1 * torch.cosine_similarity(target, input, dim=-1).mean()
-        #print(f"General loss calculated: {general_loss}")
-        # merge losses
-        loss = averaged_loss * (self.averaging_weight) + general_loss * (1 - self.averaging_weight)
-
-        return loss
+    	general_loss = -1 * torch.cosine_similarity(target, input, dim=-1).mean()
+    	loss = averaged_loss * (self.averaging_weight) + general_loss * (1 - self.averaging_weight)
+    	return loss
 
 
     def forward(self, text_embed, return_loss=True, dry_run=False):
@@ -477,6 +467,7 @@ class Imagine(nn.Module):
         total_batches = self.epochs * self.iterations * batch_size * gradient_accumulate_every
         model = DeepDaze(
                 self.perceptor,
+                self.device,
                 norm,
                 input_res,
                 total_batches,
@@ -497,22 +488,11 @@ class Imagine(nn.Module):
                 center_focus=center_focus,
                 hidden_size=hidden_size,
                 averaging_weight=averaging_weight,
-                experimental_resample=experimental_resample,
-                layer_activation=layer_activation,
                 final_activation=final_activation,
-                num_linears=num_linears,
-                multiply=multiply,
                 norm_type=norm_type,
-                fourier=fourier,
-                num_cutouts=num_cutouts,
-                pooling=pooling,
-                erf_init=erf_init
+                lr=lr
             ).to(self.device)
         self.model = model
-        self.scaler = GradScaler()
-        siren_params = model.model.parameters()
-
-        self.optimizer = optimizer(siren_params, lr)
 
         self.gradient_accumulate_every = gradient_accumulate_every
         self.save_every = save_every

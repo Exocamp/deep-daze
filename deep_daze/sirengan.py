@@ -1,10 +1,12 @@
+import math
+
 import torch
 import torch.nn.functional as F
 
 from einops import rearrange
 from torch import nn
 
-from .utils import exists
+from .utils import exists, enable
 
 #using nielsrolf's n-dim SIREN to allow for flexible output shapes
 #https://github.com/lucidrains/siren-pytorch/pull/4
@@ -47,15 +49,14 @@ class SirenLayer(nn.Module):
             bias.uniform_(-w_std, w_std)
 
     def forward(self, x):
-    	out = F.linear(x, self.weight, self.bias)
-    	out = self.activation(out)
-
+        out = F.linear(x, self.weight, self.bias)
+        out = self.activation(out)
         return out
 
 #SIREN network
 class SirenNetwork(nn.Module):
-	def __init__(self, dim_in, dim_hidden, dim_out, num_layers, w0 = 1., w0_initial = 30., use_bias = True, final_activation = None):
-		super().__init__()
+    def __init__(self, dim_in, dim_hidden, dim_out, num_layers, w0 = 1., w0_initial = 30., use_bias = True, final_activation = None):
+        super().__init__()
         self.num_layers = num_layers
         self.dim_hidden = dim_hidden
 
