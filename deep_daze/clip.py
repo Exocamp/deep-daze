@@ -4,6 +4,7 @@ from typing import Tuple, Union
 import numpy as np
 import torch
 import torch.nn.functional as F
+import torchvision.transforms as T
 from torch import nn
 from pathlib import Path
 
@@ -12,7 +13,6 @@ import os
 import urllib
 import warnings
 from typing import Union, List
-from torchvision.transforms import Compose, Normalize
 from tqdm import tqdm
 from rotary_embedding_torch import apply_rotary_emb, RotaryEmbedding, broadcat
 
@@ -74,8 +74,11 @@ def _download(url: str, root: str = os.path.expanduser("~/.cache/clip")):
 
 
 def _transform():
-    return Compose([
-        Normalize((0.48145466, 0.4578275, 0.40821073), (0.26862954, 0.26130258, 0.27577711)),
+    return T.Compose([
+        T.Normalize((0.48145466, 0.4578275, 0.40821073), (0.26862954, 0.26130258, 0.27577711)),
+        #T.Lambda(lambda x : x + torch.randn_like(x)),
+        #T.ColorJitter(brightness=0.01, contrast=0.01, saturation=0.01, hue=0.01),
+        #T.RandomHorizontalFlip()
     ])
 
 
