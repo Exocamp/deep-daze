@@ -20,7 +20,7 @@ from tqdm import trange, tqdm
 
 from .clip import load, tokenize
 from .resample import resample
-from .siren import SirenNetwork, SineActivation, SirenG, SirenD, SirenE
+from .sirengan import SirenNetwork, SineActivation, SirenG, SirenD, SirenE
 from .utils import clamp_with_grad, unmap_pixels, exists, enable
 
 clip_mean = [0.48145466, 0.4578275, 0.40821073]
