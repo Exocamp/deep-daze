@@ -12,12 +12,6 @@ from .utils import exists, enable
 def cast_tuple(val, repeat = 1):
     return val if isinstance(val, tuple) else ((val,) * repeat)
 
-def get_grid(output_shape, min_val=-1, max_val=1):
-    tensors = [torch.linspace(min_val, max_val, steps = i) for i in output_shape]
-    mgrid = torch.stack(torch.meshgrid(*tensors), dim=-1)
-    mgrid = mgrid.reshape(-1, len(output_shape))
-    return mgrid
-
 #Fourier features to be used on the input layer. thanks again alstro
 #May need to adjust std for optimal performance
 class FourierFeatures(nn.Module):
@@ -43,14 +37,13 @@ class LayerActivation(nn.Module):
 #aight I guess I have to just import the whole Siren module. okay then.
 
 class SirenLayer(nn.Module):
-    def __init__(self, dim_in, dim_out, w0 = 1., c = 6., is_first = False, use_bias = True, layer_activation=torch.sin, final_activation = None, num_linears=1, multiply=None, erf_init=False, gaussian=False):
+    def __init__(self, dim_in, dim_out, w0 = 1., c = 6., is_first = False, use_bias = True, layer_activation=torch.sin, final_activation = None, num_linears=1, multiply=None, erf_init=False):
         super().__init__()
         self.dim_in = dim_in
         self.is_first = is_first
         self.num_linears = num_linears
         self.multiply = multiply
         self.erf_init = erf_init
-        self.gaussian = gaussian
 
         weight = torch.zeros(dim_out, dim_in)
         bias = enable(use_bias, torch.zeros(dim_out))
@@ -75,20 +68,17 @@ class SirenLayer(nn.Module):
                 bias.erf_()
 
     def forward(self, x):
-        if self.gaussian:
-            x = x + (0.1**0.5) * torch.randn(x.size()).cuda()
         for _ in range(self.num_linears):
             out = F.linear(x, self.weight, self.bias)
             if exists(self.multiply):
                 out *= self.multiply
-            if exists(self.activation):
-                out = self.activation(out)
+            out = self.activation(out)
 
         return out
 
 #because I don't wanna do 2 repos, here's a more "open" SirenNet class, and by that I mean just changing activations on the layers themselves lol
 class SirenNetwork(nn.Module):
-    def __init__(self, dim_in, dim_hidden, dim_out, num_layers, w0 = 1., w0_initial = 30., use_bias = True, layer_activation = None, final_activation = nn.Identity(), num_linears = 1, multiply=None, fourier=True, erf_init=False, gaussian=False):
+    def __init__(self, dim_in, dim_hidden, dim_out, num_layers, w0 = 1., w0_initial = 30., use_bias = True, layer_activation = None, final_activation = None, num_linears = 1, multiply=None, fourier=True, erf_init=False):
         super().__init__()
         self.num_layers = num_layers
         self.dim_hidden = dim_hidden
@@ -110,8 +100,7 @@ class SirenNetwork(nn.Module):
             is_first = True,
             layer_activation = None if not exists(layer_activation) else LayerActivation(torch_activation=layer_activation),
             num_linears=num_linears,
-            erf_init=erf_init,
-            gaussian=True
+            erf_init=erf_init
           ))
 
         for ind in range(num_layers - 1):
@@ -124,7 +113,7 @@ class SirenNetwork(nn.Module):
                 num_linears=num_linears
             ))
         
-        final_activation = final_activation if exists(final_activation) else None
+        final_activation = nn.Identity() if not exists(final_activation) else final_activation
         self.last_layer = SirenLayer(dim_in = dim_hidden, dim_out = dim_out, w0 = w0, use_bias = use_bias, final_activation = final_activation, multiply=multiply)
 
     def forward(self, x, mods = None):
@@ -139,17 +128,14 @@ class SirenNetwork(nn.Module):
         return self.last_layer(x)
 
 
-###############
-#  GENERATOR  #
-###############
-class SirenWrapperG(nn.Module):
-    def __init__(self, net, output_shape, latent_dim = None):
+class SirenWrapper(nn.Module):
+    def __init__(self, net, image_width, image_height, latent_dim = None):
         super().__init__()
         assert isinstance(net, SirenNetwork), 'SirenWrapper must receive a Siren network'
 
         self.net = net
-        self.output_shape = list(output_shape)[:-1]
-        self.output_channels = list(output_shape)[-1]
+        self.image_width = image_width
+        self.image_height = image_height
 
         self.modulator = None
         if exists(latent_dim):
@@ -159,73 +145,23 @@ class SirenWrapperG(nn.Module):
                 num_layers = net.num_layers
             )
 
-        mgrid = get_grid(self.output_shape)
+        tensors = [torch.linspace(-1, 1, steps = image_width), torch.linspace(-1, 1, steps = image_height)]
+        mgrid = torch.stack(torch.meshgrid(*tensors), dim=-1)
+        mgrid = rearrange(mgrid, 'h w c -> (h w) c')
+
         self.register_buffer('grid', mgrid)
 
-    def forward(self, target = None, *, latent = None, coords = None, output_shape = None):
+    def forward(self, img = None, *, latent = None):
         modulate = exists(self.modulator)
         assert not (modulate ^ exists(latent)), 'latent vector must be only supplied if `latent_dim` was passed in on instantiation'
 
         mods = self.modulator(latent) if modulate else None
 
-        if coords is None:
-            coords = self.grid.clone().detach().requires_grad_()
-
+        coords = self.grid.clone().detach().requires_grad_()
         out = self.net(coords, mods)
-        
-        if output_shape is None:
-            output_shape = self.output_shape
+        out = rearrange(out, '(h w) c -> () c h w', h = self.image_height, w = self.image_width)
 
-        out = out.reshape(output_shape + [self.output_channels])
-
-        if exists(target):
-            return F.mse_loss(target, out)
-
-        return out
-
-
-###################
-#  DISCRIMINATOR  #
-###################
-
-class SirenWrapperD(nn.Module):
-    def __init__(self, net, output_shape, latent_dim = None):
-        super().__init__()
-        assert isinstance(net, SirenNetwork), 'SirenWrapper must receive a Siren network'
-
-        self.net = net
-        self.output_shape = output_shape
-
-        self.modulator = None
-        if exists(latent_dim):
-            self.modulator = Modulator(
-                dim_in = latent_dim,
-                dim_hidden = net.dim_hidden,
-                num_layers = net.num_layers
-            )
-
-        mgrid = get_grid(output_shape)
-        self.register_buffer('grid', mgrid)
-
-    def forward(self, target = None, *, latent = None, coords = None, output_shape = None):
-        modulate = exists(self.modulator)
-        assert not (modulate ^ exists(latent)), 'latent vector must be only supplied if `latent_dim` was passed in on instantiation'
-
-        mods = self.modulator(latent) if modulate else None
-
-        if coords is None:
-            coords = self.grid.clone().detach().requires_grad_()
-
-        out = self.net(coords, mods)
-        
-        if output_shape is None:
-            output_shape = self.output_shape
-
-
-        out = out.mean()
-        out = out.view(-1)
-
-        if exists(target):
-            return F.mse_loss(target, out)
+        if exists(img):
+            return F.mse_loss(img, out)
 
         return out

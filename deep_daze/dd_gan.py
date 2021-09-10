@@ -147,12 +147,13 @@ class DeepDaze(nn.Module):
 
         self.final_activation = final_activation
         self.norm_type = norm_type
+        self.loss_fn = nn.BCEWithLogitsLoss()
 
         w0 = default(theta_hidden, 30.)
         w0_initial = default(theta_initial, 30.)
 
         #cut up layers - TEMPORARY FOR NOW
-        num_layers = int((num_layers // 2) - 2)
+        num_layers = num_layers // 2
 
         #Initialize the three SIRENs
 
@@ -170,27 +171,27 @@ class DeepDaze(nn.Module):
 
         #Discriminator
         sD = SirenNetwork(
-            dim_in=3,
+            dim_in=512,
             dim_hidden=hidden_size,
             num_layers=num_layers,
             dim_out=1,
             use_bias=True,
             w0=w0,
             w0_initial=w0_initial,
-            final_activation=final_activation
+            final_activation=None
         )
 
         #Embedding fitter - num layers is temporary here, however many layers are needed to make fit, will be put here
-        sE = SirenNetwork(
-            dim_in=2,
-            dim_hidden=hidden_size,
-            num_layers=2,
-            dim_out=2,
-            use_bias=True,
-            w0=w0,
-            w0_initial=w0_initial,
-            final_activation=None
-        )
+        #sE = SirenNetwork(
+        #    dim_in=2,
+        #    dim_hidden=hidden_size,
+        #    num_layers=4,
+        #    dim_out=1,
+        #    use_bias=True,
+        #    w0=w0,
+        #    w0_initial=w0_initial,
+        #    final_activation=None
+        #)
 
         self.sirenG = SirenG(
         	sG,
@@ -199,18 +200,18 @@ class DeepDaze(nn.Module):
 
         self.sirenD = SirenD(
         	sD,
-        	[512]
+        	[1]
         )
 
-        self.sirenE = SirenE(
-        	sE,
-        	[1, 512]
-        )
+        #self.sirenE = SirenE(
+        #	sE,
+        #	[1, 512]
+        #)
 
         #Initialize their optimizers
         self.optG = optim.Adam(self.sirenG.parameters(), lr=lr, betas=(0.5, 0.999))
         self.optD = optim.Adam(self.sirenD.parameters(), lr=lr, betas=(0.5, 0.999))
-        self.optE = optim.Adam(self.sirenE.parameters(), lr=lr, betas=(0.5, 0.999))
+        #self.optE = opt.AdamP(self.sirenE.parameters(), lr=lr)
 
         self.saturate_bound = saturate_bound
         self.saturate_limit = 0.75  # cutouts above this value lead to destabilization
@@ -290,32 +291,26 @@ class DeepDaze(nn.Module):
 
     def forward(self, text_embed, return_loss=True, dry_run=False):
         #Labels
-        real_label = torch.ones((1, self.image_width)).to(device)
-        fake_label = torch.zeros((1, self.image_width)).to(device)
+        real_label = torch.ones(1).to(self.device)
+        fake_label = torch.zeros(1).to(self.device)
 
         #Loss dict for metrics
-        loss_list = {}
+        loss_dict = {}
 
-        #Train embed generator for one step
-        self.optE.zero_grad()
-        generated_embed = self.sirenE()
-        gen_embed = generated_embed.clone().detach().requires_grad()
-
-        #Calculate loss
-        lossE = calc_cosine_similarity(generated_embed, text_embed)
-        loss_dict['embedding'] = float(lossE.detach())
-        lossE.backward()
-        self.optE.step()
-
-        #Train generator next
+        #Train generator
         self.optG.zero_grad()
         generated_image = self.sirenG()
-        generated_image = norm_siren_output(out, norm_type=self.norm_type)
-        gen_image_embeds = calc_image_embed(generated_image)
+        generated_image = norm_siren_output(generated_image, norm_type=self.norm_type)
+        gen_image_embeds = self.calc_image_embed(generated_image)
+        #print(f"image embeds shape: {gen_image_embeds.shape}")
+        #mean over cutouts
+        gen_image_embeds = torch.mean(gen_image_embeds, dim=0).unsqueeze(0)
+        #print(f"image embeds shape meaned: {gen_image_embeds.shape}")
 
         #Discriminator now determines correctness vs incorrectness based off a "real sample" of generated embeds
         prediction = self.sirenD(coords=gen_image_embeds)
-        lossG = calc_cosine_similarity(prediction, real_label)
+        #print(prediction)
+        lossG = self.loss_fn(prediction, real_label) * -1
         loss_dict['generator'] = float(lossG.detach())
         lossG.backward()
         self.optG.step()
@@ -324,16 +319,16 @@ class DeepDaze(nn.Module):
         self.optD.zero_grad()
 
         #Real loss
-        prediction = self.sirenD(coords=gen_embed)
-        lossD_real = calc_cosine_similarity(prediction, real_label)
+        prediction = self.sirenD(coords=text_embed)
+        lossD_real = self.loss_fn(prediction, real_label)
         loss_dict['disc_real'] = float(lossD_real.detach())
-        lossD_real.backwards()
+        lossD_real.backward()
 
         #Fake loss
         prediction = self.sirenD(coords=gen_image_embeds.detach())
-        lossD_fake = calc_cosine_similarity(prediction, fake_label)
+        lossD_fake = self.loss_fn(prediction, fake_label)
         loss_dict['disc_fake'] = float(lossD_fake.detach())
-        lossD_fake.backwards()
+        lossD_fake.backward()
 
         self.optD.step()
         
@@ -466,8 +461,8 @@ class Imagine(nn.Module):
         self.image_width = image_width
         total_batches = self.epochs * self.iterations * batch_size * gradient_accumulate_every
         model = DeepDaze(
+        		self.device,
                 self.perceptor,
-                self.device,
                 norm,
                 input_res,
                 total_batches,

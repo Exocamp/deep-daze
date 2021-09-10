@@ -18,12 +18,12 @@ def get_grid(output_shape, min_val=-1, max_val=1):
 
 #Activation layer - just Sine for now, we're keeping things simple until this actually works
 class SineActivation(nn.Module):
-	def __init__(self, w0 = 1.):
-		super().__init__()
-		self.w0 = w0
+    def __init__(self, w0 = 1.):
+        super().__init__()
+        self.w0 = w0
 
-	def forward(self, x):
-		return torch.sin(self.w0 * x)
+    def forward(self, x):
+        return torch.sin(self.w0 * x)
 
 class SirenLayer(nn.Module):
     def __init__(self, dim_in, dim_out, w0 = 1., c = 6., is_first = False, use_bias = True, final_activation = None):
@@ -112,8 +112,7 @@ class SirenG(nn.Module):
         if output_shape is None:
             output_shape = self.output_shape
 
-        #out = out.reshape(output_shape + [self.output_channels])
-        out = out[None, :, :, :].permute(0, 3, 1, 2)
+        out = rearrange(out, '(h w) c -> () c h w', h = output_shape[0], w = output_shape[1])
 
         if exists(target):
             return F.mse_loss(target, out)
@@ -165,7 +164,6 @@ class SirenE(nn.Module):
         self.register_buffer('grid', mgrid)
 
     def forward(self, target = None, *, latent = None, coords = None, output_shape = None):
-
         if coords is None:
             coords = self.grid.clone().detach().requires_grad_()
 
@@ -174,10 +172,11 @@ class SirenE(nn.Module):
         if output_shape is None:
             output_shape = self.output_shape
 
+        #print(out.shape, output_shape)
         out = out.reshape(output_shape)
 
         if exists(target):
             return F.mse_loss(target, out)
 
+        #print(type(out))
         return out
-
