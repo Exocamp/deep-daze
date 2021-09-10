@@ -12,6 +12,7 @@ import hashlib
 import os
 import urllib
 import warnings
+from einops import rearrange
 from typing import Union, List
 from tqdm import tqdm
 from rotary_embedding_torch import apply_rotary_emb, RotaryEmbedding, broadcat
@@ -378,8 +379,6 @@ class LayerNorm(nn.LayerNorm):
 class QuickGELU(nn.Module):
     def forward(self, x: torch.Tensor):
         return x * torch.sigmoid(1.702 * x)
-
-
 
 class ResidualAttentionBlock(nn.Module):
     def __init__(self, d_model: int, n_head: int, attn_mask: torch.Tensor = None, rotary: bool = False, freq_type: str = "lang"):

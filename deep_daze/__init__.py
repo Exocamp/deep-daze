@@ -1,1 +1,1 @@
-from deep_daze.dd_gan import DeepDaze, Imagine
+from deep_daze.deep_daze import DeepDaze, Imagine
