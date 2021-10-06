@@ -303,8 +303,8 @@ class DeepDaze(nn.Module):
             averaged_loss = -self.loss_coef * torch.cosine_similarity(text_embed, avg_image_embed, dim=-1).mean()
             general_loss = -self.loss_coef * torch.cosine_similarity(text_embed, image_embed, dim=-1).mean()
         elif self.loss_calc == "sdl":
-            averaged_loss = self.sdl(text_embed, avg_image_embed).mean()
-            general_loss = self.sdl(text_embed, image_embed).mean()
+            averaged_loss = self.sdl(avg_image_embed, text_embed).mean()
+            general_loss = self.sdl(image_embed, text_embed).mean()
         # merge losses
         loss = averaged_loss * (self.averaging_weight) + general_loss * (1 - self.averaging_weight)
 
