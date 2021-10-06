@@ -150,7 +150,7 @@ class DeepDaze(nn.Module):
             hidden_size=256,
             averaging_weight=0.3,
             experimental_resample=None,
-            resample_padding="constant",
+            resample_padding="circular",
             layer_activation=None,
             final_activation=nn.Identity(),
             num_linears=1,
@@ -158,7 +158,8 @@ class DeepDaze(nn.Module):
             norm_type="unmap",
             fourier=False,
             pooling=False,
-            erf_init=False
+            erf_init=False,
+            loss_calc="cos_sim"
     ):
         super().__init__()
         # load clip
@@ -225,6 +226,7 @@ class DeepDaze(nn.Module):
         self.av_pool= nn.AdaptiveAvgPool2d((224, 224))
         self.max_pool = nn.AdaptiveMaxPool2d((224, 224))
         self.pooling = pooling
+        self.loss_calc = loss_calc
 
         
     def sample_sizes(self, lower, upper, width, gauss_mean):
@@ -238,6 +240,11 @@ class DeepDaze(nn.Module):
             upper *= width
             sizes = torch.randint(int(lower), int(upper), (self.batch_size,))
         return sizes
+
+    def sdl(self, x, y):
+        x = F.normalize(x, dim=-1)
+        y = F.normalize(y, dim=-1)
+        return (x - y).norm(dim=-1).div(2).arcsin().pow(2).mul(2)
 
     def forward(self, text_embed, return_loss=True, dry_run=False):
         out = self.model()
@@ -292,9 +299,12 @@ class DeepDaze(nn.Module):
         # calc loss
         # loss over averaged features of cutouts
         avg_image_embed = image_embed.mean(dim=0).unsqueeze(0)
-        averaged_loss = -self.loss_coef * torch.cosine_similarity(text_embed, avg_image_embed, dim=-1).mean()
-        # loss over all cutouts
-        general_loss = -self.loss_coef * torch.cosine_similarity(text_embed, image_embed, dim=-1).mean()
+        if self.loss_calc == "cos_sim":
+            averaged_loss = -self.loss_coef * torch.cosine_similarity(text_embed, avg_image_embed, dim=-1).mean()
+            general_loss = -self.loss_coef * torch.cosine_similarity(text_embed, image_embed, dim=-1).mean()
+        elif self.loss_calc == "sdl":
+            averaged_loss = self.sdl(text_embed, avg_image_embed).mean()
+            general_loss = self.sdl(text_embed, image_embed).mean()
         # merge losses
         loss = averaged_loss * (self.averaging_weight) + general_loss * (1 - self.averaging_weight)
 
@@ -309,63 +319,71 @@ class Imagine(nn.Module):
     def __init__(
             self,
             *,
+            #Basic parameters
             text=None,
             img=None,
             clip_encoding=None,
-            lr=1e-5,
-            batch_size=4,
-            gradient_accumulate_every=4,
-            save_every=100,
             image_width=512,
             image_height=512,
+            gradient_accumulate_every=4,
+            save_every=100,
+            seed=None,
+            save_progress=True,
+            open_folder=True,
+            save_date_time=False,
+            model_name="ViT-B/32",
             num_layers=16,
             epochs=20,
             iterations=1050,
-            save_progress=True,
-            seed=None,
-            open_folder=True,
-            save_date_time=False,
-            start_image_path=None,
-            start_image_train_iters=10,
-            start_image_lr=3e-4,
+
+            #SIREN hyperparameters
             theta_initial=None,
             theta_hidden=None,
-            model_name="ViT-B/32",
+            hidden_size=256,
+            layer_activation=None,
+            final_activation="identity",
+            num_linears=1,
+            multiply=None,
+            fourier=False,
+            pooling=False,
+            erf_init=False,
+            loss_calc="cos_sim",
+            
+            #Deepdaze hyperparameters
             lower_bound_cutout=0.1, # should be smaller than 0.8
             upper_bound_cutout=1.0,
+            batch_size=4,
             saturate_bound=False,
             averaging_weight=0.3,
-
-            create_story=False,
-            story_start_words=5,
-            story_words_per_epoch=5,
-            story_separator=None,
             gauss_sampling=False,
             gauss_mean=0.6,
             gauss_std=0.2,
             do_cutout=True,
             center_bias=False,
             center_focus=2,
+            num_cutouts=16,
+            experimental_resample=None,
+            resample_padding="circular",
+            norm_type="unmap",
+
+            #Imagine hyperparameters
+            start_image_path=None,
+            start_image_train_iters=10,
+            start_image_lr=3e-4,
+            create_story=False,
+            story_start_words=5,
+            story_words_per_epoch=5,
+            story_separator=None,
             optimizer=opt.AdamP,
             jit=True,
-            hidden_size=256,
             save_gif=False,
             save_video=False,
             save_best=True,
+            lr=1e-5,
 
-            experimental_resample=None,
-            layer_activation=None,
-            final_activation="identity",
-            num_linears=1,
-            num_cutouts=16,
-            multiply=None,
             clip_activation=nn.ReLU(inplace=True),
             rotary=False,
-            freq_type="lang",
-            norm_type="unmap",
-            fourier=False,
-            pooling=False,
-            erf_init=False
+            freq_type="lang"
     ):
 
         super().__init__()
@@ -453,6 +471,7 @@ class Imagine(nn.Module):
                 hidden_size=hidden_size,
                 averaging_weight=averaging_weight,
                 experimental_resample=experimental_resample,
+                resample_padding=resample_padding,
                 layer_activation=layer_activation,
                 final_activation=final_activation,
                 num_linears=num_linears,
@@ -461,7 +480,8 @@ class Imagine(nn.Module):
                 fourier=fourier,
                 num_cutouts=num_cutouts,
                 pooling=pooling,
-                erf_init=erf_init
+                erf_init=erf_init,
+                loss_calc=loss_calc
             ).to(self.device)
         self.model = model
         self.scaler = GradScaler()
