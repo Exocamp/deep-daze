@@ -21,17 +21,24 @@ from tqdm import trange, tqdm
 from .clip import load, tokenize
 from .resample import resample
 from .siren import SirenNetwork, LayerActivation, SirenWrapper
-from .utils import clamp_with_grad, unmap_pixels, exists, enable
+from .utils import *
 
 clip_mean = [0.48145466, 0.4578275, 0.40821073]
 clip_std = [0.26862954, 0.26130258, 0.27577711]
 
+#adapted from VQGAN notebooks - kornia does not like playing with FP16 so I have to use torchvision instead
+augs = nn.Sequential(
+    T.RandomHorizontalFlip(p=0.5),
+    T.RandomAdjustSharpness(0.15,p=0.4),
+    ActuallyRandomAffine(degrees=15, translate=(0.05, 0.05), p=0.7),
+    T.RandomPerspective(0.4,p=0.7),
+    ActuallyRandomColorJitter(saturation=0.01, contrast=0.01, p=0.7) #adjusting hue causes nan losses for some reason
+)
 
 # Helpers
 
 def default(val, d):
     return val if exists(val) else d
-
 
 def interpolate(image, size):
     return F.interpolate(image, (size, size), mode='bilinear', align_corners=False)
@@ -132,7 +139,8 @@ class DeepDaze(nn.Module):
             fourier=False,
             pooling=False,
             erf_init=False,
-            loss_calc="cos_sim"
+            loss_calc="cos_sim",
+            augment=False
     ):
         super().__init__()
         # load clip
@@ -198,6 +206,7 @@ class DeepDaze(nn.Module):
         self.max_pool = nn.AdaptiveMaxPool2d((input_res, input_res))
         self.pooling = pooling
         self.loss_calc = loss_calc
+        self.augment = augment
 
         
     def sample_sizes(self, lower, upper, width, gauss_mean):
@@ -262,6 +271,8 @@ class DeepDaze(nn.Module):
 
         # normalize
         image_pieces = torch.cat([self.normalize_image(piece) for piece in image_pieces])
+        if self.augment:
+            image_pieces = augs(image_pieces)
         
         # calc image embedding
         with autocast(enabled=False):
@@ -334,6 +345,7 @@ class Imagine(nn.Module):
             experimental_resample=None,
             resample_padding="circular",
             norm_type="unmap",
+            augment=False,
 
             #Imagine hyperparameters
             start_image_path=None,
@@ -448,7 +460,8 @@ class Imagine(nn.Module):
                 num_cutouts=num_cutouts,
                 pooling=pooling,
                 erf_init=erf_init,
-                loss_calc=loss_calc
+                loss_calc=loss_calc,
+                augment=augment
             ).to(self.device)
         self.model = model
         self.scaler = GradScaler()
