@@ -2,6 +2,7 @@ einops>=0.3
 fire
 ftfy
 imageio>=2.9.0
+kornia
 torch>=1.7.1
 torch_optimizer
 torchvision>=0.8.2

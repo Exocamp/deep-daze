@@ -2,20 +2,20 @@ import os
 import subprocess
 import sys
 import random
+
 from datetime import datetime
 from pathlib import Path
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 import torch_optimizer as opt
-from torch import nn, optim
-from torch.cuda.amp import GradScaler, autocast
-import numpy as np
-
-from PIL import Image
-from imageio import imread, mimsave
 import torchvision.transforms as T
 
+from imageio import imread, mimsave
+from PIL import Image
+from torch import nn, optim
+from torch.cuda.amp import GradScaler, autocast
 from tqdm import trange, tqdm
 
 from .clip import load, tokenize
@@ -35,31 +35,6 @@ def default(val, d):
 
 def interpolate(image, size):
     return F.interpolate(image, (size, size), mode='bilinear', align_corners=False)
-
-
-def rand_cutout(image, size, center_bias=False, center_focus=2, pooling=None):
-    av_pool = nn.AdaptiveAvgPool2d((224, 224))
-    max_pool = nn.AdaptiveMaxPool2d((224, 224))
-    width = image.shape[-1]
-    min_offset = 0
-    max_offset = width - size
-    if center_bias:
-        # sample around image center
-        center = max_offset / 2
-        std = center / center_focus
-        offset_x = int(random.gauss(mu=center, sigma=std))
-        offset_y = int(random.gauss(mu=center, sigma=std))
-        # resample uniformly if over boundaries
-        offset_x = random.randint(min_offset, max_offset) if (offset_x > max_offset or offset_x < min_offset) else offset_x
-        offset_y = random.randint(min_offset, max_offset) if (offset_y > max_offset or offset_y < min_offset) else offset_y
-    else:
-        offset_x = random.randint(min_offset, max_offset)
-        offset_y = random.randint(min_offset, max_offset)
-    cutout = image[:, :, offset_x:offset_x + size, offset_y:offset_y + size]
-    cutout = av_pool(cutout)
-
-    return cutout
-
 
 def create_clip_img_transform(image_width):
     transform = T.Compose([
@@ -145,8 +120,6 @@ class DeepDaze(nn.Module):
             gauss_std=0.2,
             do_cutout=True,
             num_cutouts=16,
-            center_bias=False,
-            center_focus=2,
             hidden_size=256,
             averaging_weight=0.3,
             experimental_resample=None,
@@ -217,14 +190,12 @@ class DeepDaze(nn.Module):
         self.cut_size = clip_perceptor.visual.input_resolution
         self.num_cutouts = num_cutouts
 
-        self.center_bias = center_bias
-        self.center_focus = center_focus
         self.averaging_weight = averaging_weight
         self.experimental_resample = experimental_resample
         self.resample_padding = resample_padding
 
-        self.av_pool= nn.AdaptiveAvgPool2d((224, 224))
-        self.max_pool = nn.AdaptiveMaxPool2d((224, 224))
+        self.av_pool= nn.AdaptiveAvgPool2d((input_res, input_res))
+        self.max_pool = nn.AdaptiveMaxPool2d((input_res, input_res))
         self.pooling = pooling
         self.loss_calc = loss_calc
 
@@ -281,7 +252,7 @@ class DeepDaze(nn.Module):
 
                 #Implement experimental resampling.
                 if exists(self.experimental_resample):
-                    image_piece = resample(image_piece, (224, 224), self.experimental_resample, align_corners=False, mode='bilinear', padding_mode=self.resample_padding)
+                    image_piece = resample(image_piece, (self.input_resolution, self.input_resolution), self.experimental_resample, align_corners=False, mode='bilinear', padding_mode=self.resample_padding)
                 else:
                     image_piece = interpolate(image_piece, self.input_resolution)
 
@@ -359,8 +330,6 @@ class Imagine(nn.Module):
             gauss_mean=0.6,
             gauss_std=0.2,
             do_cutout=True,
-            center_bias=False,
-            center_focus=2,
             num_cutouts=16,
             experimental_resample=None,
             resample_padding="circular",
@@ -466,8 +435,6 @@ class Imagine(nn.Module):
                 gauss_mean=gauss_mean,
                 gauss_std=gauss_std,
                 do_cutout=do_cutout,
-                center_bias=center_bias,
-                center_focus=center_focus,
                 hidden_size=hidden_size,
                 averaging_weight=averaging_weight,
                 experimental_resample=experimental_resample,
