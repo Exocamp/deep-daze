@@ -14,6 +14,7 @@ import urllib
 import warnings
 from einops import rearrange
 from typing import Union, List
+from pkg_resources import packaging
 from tqdm import tqdm
 from rotary_embedding_torch import apply_rotary_emb, RotaryEmbedding, broadcat
 
@@ -24,7 +25,7 @@ except ImportError:
     BICUBIC = Image.BICUBIC
 
 
-if torch.__version__.split(".") < ["1", "7", "1"]:
+if packaging.version.parse(torch.__version__) < packaging.version.parse("1.7.1"):
     warnings.warn("PyTorch version 1.7.1 or higher is recommended")
 
 _MODELS = {

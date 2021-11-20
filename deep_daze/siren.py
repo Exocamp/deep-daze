@@ -34,10 +34,18 @@ class LayerActivation(nn.Module):
     def forward(self, x):
         return self.activation(self.w0 * x)
 
+class LearnableActivation(nn.Module):
+  def __init__(self, torch_activation=torch.sin, w0 = 1.):
+    super().__init__()
+    self.w0 = nn.Parameter(torch.ones(1) * w0)
+    self.activation = torch_activation
+  def forward(self, x):
+    return self.activation(self.w0 * x)
+
 #aight I guess I have to just import the whole Siren module. okay then.
 
 class SirenLayer(nn.Module):
-    def __init__(self, dim_in, dim_out, w0 = 1., c = 6., is_first = False, use_bias = True, layer_activation=torch.sin, final_activation = None, num_linears=1, multiply=None, erf_init=False):
+    def __init__(self, dim_in, dim_out, w0 = 1., c = 6., is_first = False, use_bias = True, layer_activation=torch.sin, final_activation = None, num_linears=1, multiply=None, erf_init=False, learnable=False):
         super().__init__()
         self.dim_in = dim_in
         self.is_first = is_first
@@ -51,7 +59,10 @@ class SirenLayer(nn.Module):
 
         self.weight = nn.Parameter(weight)
         self.bias = enable(use_bias, nn.Parameter(bias))
-        self.activation = LayerActivation(torch_activation=layer_activation, w0=w0) if final_activation is None else final_activation
+        if final_activation is None:
+          self.activation = LearnableActivation(torch_activation=layer_activation, w0=w0) if learnable else LayerActivation(torch_activation=layer_activation, w0=w0)
+        else:
+          self.activation = final_activation
 
     def init_(self, weight, bias, c, w0):
         dim = self.dim_in
@@ -78,7 +89,7 @@ class SirenLayer(nn.Module):
 
 #because I don't wanna do 2 repos, here's a more "open" SirenNet class, and by that I mean just changing activations on the layers themselves lol
 class SirenNetwork(nn.Module):
-    def __init__(self, dim_in, dim_hidden, dim_out, num_layers, w0 = 1., w0_initial = 30., use_bias = True, layer_activation = None, final_activation = None, num_linears = 1, multiply=None, fourier=True, erf_init=False):
+    def __init__(self, dim_in, dim_hidden, dim_out, num_layers, w0 = 1., w0_initial = 30., use_bias = True, layer_activation = None, final_activation = None, num_linears = 1, multiply=None, fourier=True, erf_init=False, learnable=False):
         super().__init__()
         self.num_layers = num_layers
         self.dim_hidden = dim_hidden
@@ -100,7 +111,8 @@ class SirenNetwork(nn.Module):
             is_first = True,
             layer_activation = None if not exists(layer_activation) else LayerActivation(torch_activation=layer_activation),
             num_linears=num_linears,
-            erf_init=erf_init
+            erf_init=erf_init,
+            learnable=learnable
           ))
 
         for ind in range(num_layers - 1):
@@ -110,7 +122,8 @@ class SirenNetwork(nn.Module):
                 w0 = w0,
                 use_bias = use_bias,
                 layer_activation = None if not exists(layer_activation) else LayerActivation(torch_activation=layer_activation),
-                num_linears=num_linears
+                num_linears=num_linears,
+                learnable=learnable
             ))
         
         final_activation = nn.Identity() if not exists(final_activation) else final_activation
@@ -146,7 +159,7 @@ class SirenWrapper(nn.Module):
             )
 
         tensors = [torch.linspace(-1, 1, steps = image_width), torch.linspace(-1, 1, steps = image_height)]
-        mgrid = torch.stack(torch.meshgrid(*tensors), dim=-1)
+        mgrid = torch.stack(torch.meshgrid(*tensors, indexing='ij'), dim=-1)
         mgrid = rearrange(mgrid, 'h w c -> (h w) c')
 
         self.register_buffer('grid', mgrid)
