@@ -9,6 +9,9 @@ from torch import nn
 from torch.nn import functional as F
 from torchvision.transforms import InterpolationMode
 
+def default(val, d):
+    return val if exists(val) else d
+
 def exists(val):
     return val is not None
 

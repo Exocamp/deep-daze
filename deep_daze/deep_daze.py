@@ -29,16 +29,12 @@ clip_std = [0.26862954, 0.26130258, 0.27577711]
 #adapted from VQGAN notebooks - kornia does not like playing with FP16 so I have to use torchvision instead
 augs = nn.Sequential(
     T.RandomHorizontalFlip(p=0.5),
-    T.RandomAdjustSharpness(0.15,p=0.4),
-    ActuallyRandomAffine(degrees=15, translate=(0.05, 0.05), p=0.7),
-    T.RandomPerspective(0.4,p=0.7),
+    T.RandomAdjustSharpness(0.3,p=0.4),
+    ActuallyRandomAffine(degrees=30, translate=(0.1, 0.1), p=0.8),
+    T.RandomPerspective(0.7,p=0.7),
     ActuallyRandomColorJitter(saturation=0.01, contrast=0.01, p=0.7) #adjusting hue causes nan losses for some reason
 )
-
 # Helpers
-
-def default(val, d):
-    return val if exists(val) else d
 
 def interpolate(image, size):
     return F.interpolate(image, (size, size), mode='bilinear', align_corners=False)

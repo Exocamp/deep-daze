@@ -28,20 +28,12 @@ class FourierFeatures(nn.Module):
 #Custom activation. Will it work? ¯\_(ツ)_/¯
 
 class LayerActivation(nn.Module):
-    def __init__(self, torch_activation=torch.sin, w0 = 1.):
+    def __init__(self, torch_activation=torch.sin, w0 = 1., learnable=False):
         super().__init__()
-        self.w0 = w0
+        self.w0 = nn.Parameter(torch.ones(1) * w0) if learnable else w0
         self.activation = torch_activation
     def forward(self, x):
         return self.activation(self.w0 * x)
-
-class LearnableActivation(nn.Module):
-  def __init__(self, torch_activation=torch.sin, w0 = 1.):
-    super().__init__()
-    self.w0 = nn.Parameter(torch.ones(1) * w0)
-    self.activation = torch_activation
-  def forward(self, x):
-    return self.activation(self.w0 * x)
 
 #aight I guess I have to just import the whole Siren module. okay then.
 
@@ -61,7 +53,7 @@ class SirenLayer(nn.Module):
         self.weight = nn.Parameter(weight)
         self.bias = enable(use_bias, nn.Parameter(bias))
         if final_activation is None:
-          self.activation = LearnableActivation(torch_activation=layer_activation, w0=w0) if learnable else LayerActivation(torch_activation=layer_activation, w0=w0)
+          self.activation = LayerActivation(torch_activation=layer_activation, w0=w0, learnable=learnable)
         else:
           self.activation = final_activation
 
@@ -110,10 +102,10 @@ class SirenNetwork(nn.Module):
             w0 = w0_initial,
             use_bias = use_bias,
             is_first = True,
-            layer_activation = None if not exists(layer_activation) else LayerActivation(torch_activation=layer_activation),
-            num_linears=num_linears,
-            erf_init=erf_init,
-            learnable=learnable
+            layer_activation = enable(exists(layer_activation), LayerActivation(torch_activation=layer_activation)),
+            num_linears = num_linears,
+            erf_init = erf_init,
+            learnable = learnable
           ))
 
         for ind in range(num_layers - 1):
@@ -122,7 +114,7 @@ class SirenNetwork(nn.Module):
                 dim_out = dim_hidden,
                 w0 = w0,
                 use_bias = use_bias,
-                layer_activation = None if not exists(layer_activation) else LayerActivation(torch_activation=layer_activation),
+                layer_activation = enable(exists(layer_activation), LayerActivation(torch_activation=layer_activation)),
                 num_linears=num_linears,
                 learnable=learnable
             ))
