@@ -102,7 +102,7 @@ class SirenNetwork(nn.Module):
             w0 = w0_initial,
             use_bias = use_bias,
             is_first = True,
-            layer_activation = enable(exists(layer_activation), LayerActivation(torch_activation=layer_activation)),
+            layer_activation = enable(exists(layer_activation), LayerActivation(torch_activation=layer_activation, learnable=learnable)),
             num_linears = num_linears,
             erf_init = erf_init,
             learnable = learnable
@@ -120,7 +120,7 @@ class SirenNetwork(nn.Module):
             ))
         
         final_activation = nn.Identity() if not exists(final_activation) else final_activation
-        self.last_layer = SirenLayer(dim_in = dim_hidden, dim_out = dim_out, w0 = w0, use_bias = use_bias, final_activation = final_activation, multiply=multiply)
+        self.last_layer = SirenLayer(dim_in = dim_hidden, dim_out = dim_out, w0 = w0, use_bias = use_bias, final_activation = final_activation, multiply=multiply, learnable=learnable)
 
     def forward(self, x, mods = None):
         mods = cast_tuple(mods, self.num_layers)
@@ -169,5 +169,3 @@ class SirenWrapper(nn.Module):
 
         if exists(img):
             return F.mse_loss(img, out)
-
-        return out

@@ -136,7 +136,8 @@ class DeepDaze(nn.Module):
             pooling=False,
             erf_init=False,
             loss_calc="cos_sim",
-            augment=False
+            augment=False,
+            learnable_w0=False
     ):
         super().__init__()
         # load clip
@@ -172,7 +173,8 @@ class DeepDaze(nn.Module):
             num_linears=num_linears,
             multiply=multiply,
             fourier=fourier,
-            erf_init=erf_init
+            erf_init=erf_init,
+            learnable=learnable_w0
         )
 
         self.model = SirenWrapper(
@@ -326,6 +328,7 @@ class Imagine(nn.Module):
             pooling=False,
             erf_init=False,
             loss_calc="cos_sim",
+            learnable_w0=False,
             
             #Deepdaze hyperparameters
             lower_bound_cutout=0.1, # should be smaller than 0.8
@@ -457,7 +460,8 @@ class Imagine(nn.Module):
                 pooling=pooling,
                 erf_init=erf_init,
                 loss_calc=loss_calc,
-                augment=augment
+                augment=augment,
+                learnable_w0=learnable_w0
             ).to(self.device)
         self.model = model
         self.scaler = GradScaler()
