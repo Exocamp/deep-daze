@@ -31,7 +31,6 @@ class FacConv(nn.Module):
 class SIRENConvBlock(nn.Module):
 	def __init__(self, in_channels, out_channels, kernel_size, image_size, w0=1., is_first=False, layer_activation=torch.sin, final_activation = None, multiply=None, learnable=False):
 		super().__init__()
-		if is_first:
 
 		self.block = nn.Sequential(
 			FacConv(in_channels=in_channels, out_channels=out_channels, k_size=kernel_size),
