@@ -59,6 +59,29 @@ clamp_with_grad = ClampWithGrad.apply
 def unmap_pixels(x, logit_laplace_eps=0.25):
     return clamp_with_grad((x - logit_laplace_eps) / (1 - 2 * logit_laplace_eps), 0, 1)
 
+###MATH_UTILS_TORCH.PY FROM PI-GAN SOURCE CODE
+
+def transform_vectors(matrix: torch.Tensor, vectors4: torch.Tensor) -> torch.Tensor:
+    """
+    Left-multiplies MxM @ NxM. Returns NxM.
+    """
+    res = torch.matmul(vectors4, matrix.T)
+    return res
+
+
+def normalize_vecs(vectors: torch.Tensor) -> torch.Tensor:
+    """
+    Normalize vector lengths.
+    """
+    return vectors / (torch.norm(vectors, dim=-1, keepdim=True))
+
+def torch_dot(x: torch.Tensor, y: torch.Tensor):
+    """
+    Dot product of two tensors.
+    """
+    return (x * y).sum(-1)
+
+
 ##AUGMENTS
 
 #For some reason torchvision random affines and color jitter does not have a probability parameter
